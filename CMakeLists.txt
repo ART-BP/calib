@@ -18,6 +18,7 @@ catkin_package(
 
 include_directories(
   include
+  include/fast_calib
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}

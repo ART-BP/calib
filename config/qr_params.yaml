@@ -12,19 +12,21 @@
   k3: 0.060392401913685174
   k4: -0.03652503468416535
 
-  # 鱼眼去畸变后（等价 pinhole）示例
-  # camera_model: "pinhole"
-  # fx: 824.000458318671
-  # fy: 823.9586532610845
-  # cx: 990.3299740527029
-  # cy: 526.1425913864505
-  # k1: 0
-  # k2: 0
-  # p1: 0
-  # p2: 0
-  # k3: 0
-  # k4: 0
+  # camera_model: "rational_polynomial"
+  # fx: 1335.864460386936
+  # fy: 1328.2832716149142
+  # cx: 968.8817902412135
+  # cy: 522.6824932300386
+  # k1: 0.32646411607826503
+  # k2: -1.9188957740895327
+  # p1: 0.001982715074362484
+  # p2: -0.00027570679873816954
+  # k3: -2.926917582123901
+  # k4: 0.6514928387415442
+  # k5: -1.0590538723452347
+  # k6: -5.409316087937021
 
+ 
 # Calibration target parameters
   marker_size: 0.16 # ArUco marker size (our test data uses 0.16m; adjust to match your marker size)
   delta_width_qr_center: 0.55 # Half the distance between the centers of two markers in the horizontal direction 
@@ -34,14 +36,14 @@
   circle_radius: 0.12 # Radius of the circle 
 
 # multi_scene_11
-  # x_min: -1.4
-  # x_max: 0.8
-  # y_min: -3.2
-  # y_max: -2.0
-  # z_min: -0.7
-  # z_max: 0.8
-  # bag_path: "$(find fast_calib)/calib_data/scene/mid_short.bag"
-  # image_path: "$(find fast_calib)/calib_data/scene/mid.png"
+  x_min: -1.4
+  x_max: 0.8
+  y_min: -3.2
+  y_max: -2.0
+  z_min: -0.7
+  z_max: 0.8
+  bag_path: "$(find fast_calib)/calib_data/scene/mid_short.bag"
+  image_path: "$(find fast_calib)/calib_data/scene/mid.png"
 
 # multi_scene_22
   # x_min: -3.0
@@ -53,14 +55,14 @@
   # bag_path: "$(find fast_calib)/calib_data/scene/left_short.bag"
   # image_path: "$(find fast_calib)/calib_data/scene/left.png"
 # multi_scene_33
-  x_min: -1.3
-  x_max: 2.0
-  y_min: -3.0
-  y_max: -1.4
-  z_min: -0.7
-  z_max: 0.9
-  bag_path: "$(find fast_calib)/calib_data/scene/right_short.bag"
-  image_path: "$(find fast_calib)/calib_data/scene/right.png"
+  # x_min: -1.3
+  # x_max: 2.0
+  # y_min: -3.0
+  # y_max: -1.4
+  # z_min: -0.7
+  # z_max: 0.9
+  # bag_path: "$(find fast_calib)/calib_data/scene/right_short.bag"
+  # image_path: "$(find fast_calib)/calib_data/scene/right.png"
   
   
   lidar_topic: "/lidar_points"

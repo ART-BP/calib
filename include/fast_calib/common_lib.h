@@ -103,10 +103,10 @@ Params loadParameters(ros::NodeHandle &nh) {
   nh.param("delta_height_circles", params.delta_height_circles, 0.4);
   nh.param("min_detected_markers", params.min_detected_markers, 3);
   nh.param("circle_radius", params.circle_radius, 0.12);
-  nh.param("image_path", params.image_path, string("/home/chunran/calib_ws/src/fast_calib/data/image.png"));
-  nh.param("bag_path", params.bag_path, string("/home/chunran/calib_ws/src/fast_calib/data/input.bag"));
-  nh.param("lidar_topic", params.lidar_topic, string("/livox/lidar"));
-  nh.param("output_path", params.output_path, string("/home/chunran/calib_ws/src/fast_calib/output"));
+  nh.param("image_path", params.image_path, string("/home/allgo/mydrive/fast_calib_ws/src/fast_calib/calib_data/scene/mid.png"));
+  nh.param("bag_path", params.bag_path, string("/home/allgo/mydrive/fast_calib_ws/src/fast_calib/calib_data/scene/mid.bag"));
+  nh.param("lidar_topic", params.lidar_topic, string("/lidar_points"));
+  nh.param("output_path", params.output_path, string("/home/allgo/mydrive/fast_calib_ws/src/fast_calib/output"));
   nh.param("x_min", params.x_min, 1.5);
   nh.param("x_max", params.x_max, 3.0);
   nh.param("y_min", params.y_min, -1.5);

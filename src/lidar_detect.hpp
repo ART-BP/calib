@@ -13,6 +13,7 @@ which is included as part of this source code package.
 #include <geometry_msgs/PointStamped.h>
 #include <Eigen/Dense>
 #include <ros/ros.h>
+#include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
 #include "common_lib.h"
 
@@ -28,6 +29,56 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr aligned_cloud_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr edge_cloud_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr center_z0_cloud_;
+
+    void clear_intermediate_clouds()
+    {
+        filtered_cloud_->clear();
+        plane_cloud_->clear();
+        aligned_cloud_->clear();
+        edge_cloud_->clear();
+        center_z0_cloud_->clear();
+    }
+
+    static bool valid_plane_coefficients(const pcl::ModelCoefficients::Ptr& coeffs)
+    {
+        if (!coeffs || coeffs->values.size() < 4) {
+            return false;
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            if (!std::isfinite(coeffs->values[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static Eigen::Matrix3d rotation_to_z_axis(const Eigen::Vector3d& normal)
+    {
+        if (!normal.allFinite() || normal.norm() < 1e-9) {
+            return Eigen::Matrix3d::Identity();
+        }
+
+        Eigen::Vector3d n = normal.normalized();
+        const Eigen::Vector3d z_axis(0.0, 0.0, 1.0);
+        const double cos_angle = std::max(-1.0, std::min(1.0, n.dot(z_axis)));
+
+        if (std::abs(cos_angle - 1.0) < 1e-9) {
+            return Eigen::Matrix3d::Identity();
+        }
+        if (std::abs(cos_angle + 1.0) < 1e-9) {
+            return Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).toRotationMatrix();
+        }
+
+        Eigen::Vector3d axis = n.cross(z_axis);
+        const double axis_norm = axis.norm();
+        if (axis_norm < 1e-9) {
+            return Eigen::Matrix3d::Identity();
+        }
+        axis /= axis_norm;
+
+        const double angle = std::acos(cos_angle);
+        return Eigen::AngleAxisd(angle, axis).toRotationMatrix();
+    }
 
 public:
     ros::Publisher filtered_pub_;
@@ -64,28 +115,44 @@ public:
 
     void detect_mech_lidar(pcl::PointCloud<Common::Point>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr center_cloud)
     {
+        clear_intermediate_clouds();
+        center_cloud->clear();
+
+        if (!cloud || cloud->empty()) {
+            ROS_WARN("[LiDAR] Empty input cloud, skip mechanical LiDAR detection.");
+            return;
+        }
+
         // 1. X、Y、Z方向滤波
         filtered_cloud_->reserve(cloud->size());
+        pcl::PointCloud<Common::Point>::Ptr pass_x_cloud(new pcl::PointCloud<Common::Point>);
+        pcl::PointCloud<Common::Point>::Ptr pass_y_cloud(new pcl::PointCloud<Common::Point>);
 
         pcl::PassThrough<Common::Point> pass_x;
         pass_x.setInputCloud(cloud);
         pass_x.setFilterFieldName("x");
         pass_x.setFilterLimits(x_min_, x_max_);  // 设置X轴范围
-        pass_x.filter(*filtered_cloud_);
+        pass_x.filter(*pass_x_cloud);
     
         pcl::PassThrough<Common::Point> pass_y;
-        pass_y.setInputCloud(filtered_cloud_);
+        pass_y.setInputCloud(pass_x_cloud);
         pass_y.setFilterFieldName("y");
         pass_y.setFilterLimits(y_min_, y_max_);  // 设置Y轴范围
-        pass_y.filter(*filtered_cloud_);
+        pass_y.filter(*pass_y_cloud);
     
         pcl::PassThrough<Common::Point> pass_z;
-        pass_z.setInputCloud(filtered_cloud_);
+        pass_z.setInputCloud(pass_y_cloud);
         pass_z.setFilterFieldName("z");
         pass_z.setFilterLimits(z_min_, z_max_);  // 设置Z轴范围
         pass_z.filter(*filtered_cloud_);
+        std::vector<int> filtered_nan_map;
+        pcl::removeNaNFromPointCloud(*filtered_cloud_, *filtered_cloud_, filtered_nan_map);
 
         ROS_INFO("Depth filtered cloud size: %zu", filtered_cloud_->size());
+        if (filtered_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Too few points after ROI filtering (%zu), skip.", filtered_cloud_->size());
+            return;
+        }
 
         // 2. 拟合平面，提取法向量
         plane_cloud_->reserve(filtered_cloud_->size());
@@ -95,15 +162,27 @@ public:
         pcl::SACSegmentation<Common::Point> plane_segmentation;
         plane_segmentation.setModelType(pcl::SACMODEL_PLANE);
         plane_segmentation.setMethodType(pcl::SAC_RANSAC);
+        plane_segmentation.setOptimizeCoefficients(true);
+        plane_segmentation.setMaxIterations(1000);
         plane_segmentation.setDistanceThreshold(0.01);  // 平面分割阈值
         plane_segmentation.setInputCloud(filtered_cloud_);
         plane_segmentation.segment(*plane_inliers, *plane_coefficients);
+
+        if (!valid_plane_coefficients(plane_coefficients) || plane_inliers->indices.size() < 3) {
+            ROS_WARN("[LiDAR] Plane segmentation failed (inliers=%zu, coeff_size=%zu).",
+                     plane_inliers->indices.size(), plane_coefficients->values.size());
+            return;
+        }
     
         pcl::ExtractIndices<Common::Point> extract;
         extract.setInputCloud(filtered_cloud_);
         extract.setIndices(plane_inliers);
         extract.filter(*plane_cloud_);
         ROS_INFO("Plane cloud size: %zu", plane_cloud_->size());
+        if (plane_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Plane cloud too small (%zu), skip.", plane_cloud_->size());
+            return;
+        }
     
         // 3. 根据每条ring相邻点距离提取边缘点
         edge_cloud_->reserve(filtered_cloud_->size());
@@ -121,6 +200,10 @@ public:
         const auto &c = plane_coefficients->values; // [a, b, c, d]
         Eigen::Vector3d n(c[0], c[1], c[2]);
         double norm_n = n.norm();
+        if (!std::isfinite(norm_n) || norm_n < 1e-9) {
+            ROS_WARN("[LiDAR] Invalid plane normal, skip.");
+            return;
+        }
         Eigen::Vector3d normal = n / norm_n;
 
         // 在每条 ring 内，用相邻点距离检测跳变点作为边缘点
@@ -163,15 +246,14 @@ public:
         }
 
         ROS_INFO("Extracted %zu edge points (mechanical LiDAR by neighbor distance).", edge_cloud_->size());
+        if (edge_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Too few edge points (%zu), skip circle detection.", edge_cloud_->size());
+            return;
+        }
 
         // 4. 将边缘点对齐到 Z=0 平面
         aligned_cloud_->reserve(edge_cloud_->size());
-        Eigen::Vector3d z_axis(0, 0, 1);
-        Eigen::Vector3d axis = normal.cross(z_axis);
-        double angle = acos(normal.dot(z_axis));
-
-        Eigen::AngleAxisd rotation(angle, axis);
-        Eigen::Matrix3d R_align = rotation.toRotationMatrix();
+        Eigen::Matrix3d R_align = rotation_to_z_axis(normal);
 
         float average_z = 0.0;
         int cnt = 0;
@@ -181,6 +263,10 @@ public:
             aligned_cloud_->push_back(pcl::PointXYZ(aligned_point.x(), aligned_point.y(), 0.0));
             average_z += aligned_point.z();
             cnt++;
+        }
+        if (cnt == 0) {
+            ROS_WARN("[LiDAR] No aligned points available for circle detection.");
+            return;
         }
         average_z /= cnt;
 
@@ -198,7 +284,9 @@ public:
         circle_segmentation.setDistanceThreshold(0.02);
         circle_segmentation.setOptimizeCoefficients(true);
         circle_segmentation.setMaxIterations(1000);
-        circle_segmentation.setRadiusLimits(circle_radius_ - 0.03, circle_radius_ + 0.03);
+        const double min_radius = std::max(1e-4, circle_radius_ - 0.03);
+        const double max_radius = std::max(min_radius + 1e-4, circle_radius_ + 0.03);
+        circle_segmentation.setRadiusLimits(min_radius, max_radius);
 
         pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
         pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
@@ -216,6 +304,10 @@ public:
             if (inliers->indices.empty())
             {
                 ROS_INFO("[LiDAR] No more circles can be found, stop.");
+                break;
+            }
+            if (coefficients->values.size() < 3) {
+                ROS_WARN("[LiDAR] Invalid circle coefficients, stop.");
                 break;
             }
 
@@ -258,9 +350,14 @@ public:
         }
 
         // 6. Geometric consistency check
+        if (center_z0_cloud_->size() < TARGET_NUM_CIRCLES) {
+            ROS_WARN("[LiDAR] Found only %zu circle candidates, expected at least %d.",
+                     center_z0_cloud_->size(), TARGET_NUM_CIRCLES);
+            return;
+        }
         std::vector<std::vector<int>> groups;
         comb(center_z0_cloud_->size(), TARGET_NUM_CIRCLES, groups);
-        double groups_scores[groups.size()];  // -1: invalid; 0-1 normalized score
+        std::vector<double> groups_scores(groups.size(), -1.0);  // -1: invalid; 0-1 normalized score
         for (int i = 0; i < groups.size(); ++i) 
         {
             std::vector<pcl::PointXYZ> candidates;
@@ -329,34 +426,56 @@ public:
 
     void detect_solid_lidar(pcl::PointCloud<Common::Point>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr center_cloud)
     {
+        clear_intermediate_clouds();
+        center_cloud->clear();
+
+        if (!cloud || cloud->empty()) {
+            ROS_WARN("[LiDAR] Empty input cloud, skip solid LiDAR detection.");
+            return;
+        }
+
         // 1. X、Y、Z方向滤波
         filtered_cloud_->reserve(cloud->size());
+        pcl::PointCloud<Common::Point>::Ptr pass_x_cloud(new pcl::PointCloud<Common::Point>);
+        pcl::PointCloud<Common::Point>::Ptr pass_y_cloud(new pcl::PointCloud<Common::Point>);
 
         pcl::PassThrough<Common::Point> pass_x;
         pass_x.setInputCloud(cloud);
         pass_x.setFilterFieldName("x");
         pass_x.setFilterLimits(x_min_, x_max_);  // 设置X轴范围
-        pass_x.filter(*filtered_cloud_);
+        pass_x.filter(*pass_x_cloud);
     
         pcl::PassThrough<Common::Point> pass_y;
-        pass_y.setInputCloud(filtered_cloud_);
+        pass_y.setInputCloud(pass_x_cloud);
         pass_y.setFilterFieldName("y");
         pass_y.setFilterLimits(y_min_, y_max_);  // 设置Y轴范围
-        pass_y.filter(*filtered_cloud_);
+        pass_y.filter(*pass_y_cloud);
     
         pcl::PassThrough<Common::Point> pass_z;
-        pass_z.setInputCloud(filtered_cloud_);
+        pass_z.setInputCloud(pass_y_cloud);
         pass_z.setFilterFieldName("z");
         pass_z.setFilterLimits(z_min_, z_max_);  // 设置Z轴范围
         pass_z.filter(*filtered_cloud_);
+        std::vector<int> filtered_nan_map;
+        pcl::removeNaNFromPointCloud(*filtered_cloud_, *filtered_cloud_, filtered_nan_map);
     
         ROS_INFO("Filtered cloud size: %zu", filtered_cloud_->size());
+        if (filtered_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Too few points after ROI filtering (%zu), skip.", filtered_cloud_->size());
+            return;
+        }
         
         pcl::VoxelGrid<Common::Point> voxel_filter;
         voxel_filter.setInputCloud(filtered_cloud_);
         voxel_filter.setLeafSize(0.005f, 0.005f, 0.005f);
         voxel_filter.filter(*filtered_cloud_);
+        std::vector<int> voxel_nan_map;
+        pcl::removeNaNFromPointCloud(*filtered_cloud_, *filtered_cloud_, voxel_nan_map);
         ROS_INFO("Filtered cloud size: %zu", filtered_cloud_->size());
+        if (filtered_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Too few points after voxel filter (%zu), skip.", filtered_cloud_->size());
+            return;
+        }
 
         // 2. 平面分割
         plane_cloud_->reserve(filtered_cloud_->size());
@@ -366,15 +485,27 @@ public:
         pcl::SACSegmentation<Common::Point> plane_segmentation;
         plane_segmentation.setModelType(pcl::SACMODEL_PLANE);
         plane_segmentation.setMethodType(pcl::SAC_RANSAC);
+        plane_segmentation.setOptimizeCoefficients(true);
+        plane_segmentation.setMaxIterations(1000);
         plane_segmentation.setDistanceThreshold(0.01);  // 平面分割阈值
         plane_segmentation.setInputCloud(filtered_cloud_);
         plane_segmentation.segment(*plane_inliers, *plane_coefficients);
+
+        if (!valid_plane_coefficients(plane_coefficients) || plane_inliers->indices.size() < 3) {
+            ROS_WARN("[LiDAR] Plane segmentation failed (inliers=%zu, coeff_size=%zu).",
+                     plane_inliers->indices.size(), plane_coefficients->values.size());
+            return;
+        }
     
         pcl::ExtractIndices<Common::Point> extract;
         extract.setInputCloud(filtered_cloud_);
         extract.setIndices(plane_inliers);
         extract.filter(*plane_cloud_);
         ROS_INFO("Plane cloud size: %zu", plane_cloud_->size());
+        if (plane_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Plane cloud too small (%zu), skip.", plane_cloud_->size());
+            return;
+        }
     
         // 3. 平面点云对齐   
         aligned_cloud_->reserve(plane_cloud_->size());
@@ -382,14 +513,11 @@ public:
         Eigen::Vector3d normal(plane_coefficients->values[0],
             plane_coefficients->values[1],
             plane_coefficients->values[2]);
-        normal.normalize();
-        Eigen::Vector3d z_axis(0, 0, 1);
-
-        Eigen::Vector3d axis = normal.cross(z_axis);
-        double angle = acos(normal.dot(z_axis));
-
-        Eigen::AngleAxisd rotation(angle, axis);
-        Eigen::Matrix3d R = rotation.toRotationMatrix();
+        if (!normal.allFinite() || normal.norm() < 1e-9) {
+            ROS_WARN("[LiDAR] Invalid plane normal, skip.");
+            return;
+        }
+        Eigen::Matrix3d R = rotation_to_z_axis(normal);
 
         // 应用旋转矩阵，将平面对齐到 Z=0 平面
         float average_z = 0.0;
@@ -400,6 +528,10 @@ public:
             aligned_cloud_->push_back(pcl::PointXYZ(aligned_point.x(), aligned_point.y(), 0.0));
             average_z += aligned_point.z();
             cnt++;
+        }
+        if (cnt == 0) {
+            ROS_WARN("[LiDAR] No aligned points available.");
+            return;
         }
         average_z /= cnt;
 
@@ -426,6 +558,10 @@ public:
             }
         }
         ROS_INFO("Extracted %zu edge points.", edge_cloud_->size());
+        if (edge_cloud_->size() < 3) {
+            ROS_WARN("[LiDAR] Too few edge points (%zu), skip.", edge_cloud_->size());
+            return;
+        }
 
         // 5. 对边缘点进行聚类
         pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -463,10 +599,13 @@ public:
             seg.setMethodType(pcl::SAC_RANSAC);
             seg.setDistanceThreshold(0.01); // 设置距离阈值
             seg.setMaxIterations(1000);     // 设置最大迭代次数
+            const double min_radius = std::max(1e-4, circle_radius_ - 0.03);
+            const double max_radius = std::max(min_radius + 1e-4, circle_radius_ + 0.03);
+            seg.setRadiusLimits(min_radius, max_radius);
             seg.setInputCloud(cluster);
             seg.segment(*inliers, *coefficients);
     
-            if (inliers->indices.size() > 0) 
+            if (inliers->indices.size() > 0 && coefficients->values.size() >= 3) 
             {
                 // 计算拟合误差
                 double error = 0.0;

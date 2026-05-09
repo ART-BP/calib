@@ -9,6 +9,8 @@
 #include <iomanip>
 #include <sys/stat.h>
 #include <cmath>
+#include <array>
+#include <limits>
 #include "common_lib.h"
 #include "data_preprocess.hpp"
 
@@ -24,6 +26,29 @@ struct Block {
   std::vector<Eigen::Vector3d> lidar_pts; // 4
   std::vector<Eigen::Vector3d> qr_pts;    // 4
 };
+
+static std::vector<std::array<int, 4>> BuildRectanglePermutations()
+{
+    // Restrict to rectangle symmetries (D4): 4 rotations + 4 mirrored orders.
+    std::vector<std::array<int, 4>> perms;
+    perms.reserve(8);
+    perms.push_back({0, 1, 2, 3});
+    perms.push_back({1, 2, 3, 0});
+    perms.push_back({2, 3, 0, 1});
+    perms.push_back({3, 0, 1, 2});
+    perms.push_back({0, 3, 2, 1});
+    perms.push_back({3, 2, 1, 0});
+    perms.push_back({2, 1, 0, 3});
+    perms.push_back({1, 0, 3, 2});
+    return perms;
+}
+
+static std::string PermToString(const std::array<int, 4>& p)
+{
+    std::ostringstream os;
+    os << "[" << p[0] << "," << p[1] << "," << p[2] << "," << p[3] << "]";
+    return os.str();
+}
 
 RigidResult SolveRigidTransformWeighted(
     const std::vector<Eigen::Vector3d>& lidar_pts,
@@ -164,18 +189,60 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // 取最后3个 block
+    // 取最后3个 block，并通过全局最小RMSE消除跨场景点序歧义
     std::vector<Eigen::Vector3d> L, C;
-    for (size_t k = blocks.size() - 3; k < blocks.size(); ++k) 
+    const auto perms = BuildRectanglePermutations();
+    const size_t base_idx = blocks.size() - 3;
+    double best_rms = std::numeric_limits<double>::infinity();
+    std::array<int, 3> best_perm_idx{{0, 0, 0}};
+
+    for (int p0 = 0; p0 < static_cast<int>(perms.size()); ++p0)
     {
-        const auto& b = blocks[k];
-        // 依次拼入，保持顺序一致
-        for (int i = 0; i < 4; ++i) 
+        for (int p1 = 0; p1 < static_cast<int>(perms.size()); ++p1)
         {
-            L.push_back(b.lidar_pts[i]);
-            C.push_back(b.qr_pts[i]);
+            for (int p2 = 0; p2 < static_cast<int>(perms.size()); ++p2)
+            {
+                std::vector<Eigen::Vector3d> Lt, Ct;
+                Lt.reserve(12);
+                Ct.reserve(12);
+                const int perm_idx[3] = {p0, p1, p2};
+
+                for (int b = 0; b < 3; ++b)
+                {
+                    const auto& block = blocks[base_idx + b];
+                    const auto& perm = perms[perm_idx[b]];
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        Lt.push_back(block.lidar_pts[i]);
+                        Ct.push_back(block.qr_pts[perm[i]]);
+                    }
+                }
+
+                auto trial = SolveRigidTransformWeighted(Lt, Ct, nullptr);
+                if (!trial.ok) continue;
+                if (trial.rms < best_rms)
+                {
+                    best_rms = trial.rms;
+                    best_perm_idx = {p0, p1, p2};
+                    L.swap(Lt);
+                    C.swap(Ct);
+                }
+            }
         }
     }
+
+    if (!std::isfinite(best_rms)) {
+        ROS_ERROR("Permutation disambiguation failed.");
+        return 1;
+    }
+
+    std::cout << "[Multi] Selected QR permutations for the last 3 blocks: "
+              << PermToString(perms[best_perm_idx[0]]) << ", "
+              << PermToString(perms[best_perm_idx[1]]) << ", "
+              << PermToString(perms[best_perm_idx[2]]) << std::endl;
+    std::cout << "[Multi] Best pre-solve RMSE after disambiguation: "
+              << std::fixed << std::setprecision(6) << best_rms << " m" << std::endl;
+
     if (L.size() != 12 || C.size() != 12) {
         ROS_ERROR("Merged pairs not equal to 12 (L=%zu, C=%zu).", L.size(), C.size());
         return 1;
