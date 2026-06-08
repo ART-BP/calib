@@ -1,0 +1,163 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import glob
+import cv2
+import yaml
+import numpy as np
+
+pattern_size = (11, 8)   # 内角点数 (cols, rows)
+square_size = 0.04       # 方格边长，单位米
+
+image_dir = "./images"
+image_paths = sorted(glob.glob(os.path.join(image_dir, "*.jpg")) +
+                     glob.glob(os.path.join(image_dir, "*.png")))
+
+if len(image_paths) == 0:
+    raise RuntimeError("未找到标定图片，请检查 ./images 目录")
+
+objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
+objp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)
+objp *= square_size
+
+objpoints = []
+imgpoints = []
+
+criteria = (
+    cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+    30,
+    1e-3
+)
+
+img_size = None
+valid_count = 0
+
+vis_dir = "./corner_vis"
+if not os.path.exists(vis_dir):
+    os.makedirs(vis_dir)
+
+for img_path in image_paths:
+    img = cv2.imread(img_path)
+    if img is None:
+        print("[跳过] 无法读取: {}".format(img_path))
+        continue
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    if img_size is None:
+        img_size = gray.shape[::-1]
+    else:
+        if gray.shape[::-1] != img_size:
+            print("[跳过] 分辨率不一致: {}".format(img_path))
+            continue
+
+    ret, corners = cv2.findChessboardCorners(
+        gray,
+        pattern_size,
+        flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+    )
+
+    if not ret:
+        print("[失败] 未检测到角点: {}".format(img_path))
+        continue
+
+    corners_subpix = cv2.cornerSubPix(
+        gray,
+        corners,
+        (11, 11),
+        (-1, -1),
+        criteria
+    )
+
+    objpoints.append(objp)
+    imgpoints.append(corners_subpix)
+    valid_count += 1
+
+    vis = img.copy()
+    cv2.drawChessboardCorners(vis, pattern_size, corners_subpix, ret)
+    cv2.imwrite(os.path.join(vis_dir, os.path.basename(img_path)), vis)
+
+    print("[成功] {}".format(img_path))
+
+if valid_count < 10:
+    raise RuntimeError("有效图片太少，仅 {} 张，建议至少 15~20 张".format(valid_count))
+
+print("\n有效标定图片数量: {}".format(valid_count))
+
+ret, K, D, rvecs, tvecs = cv2.calibrateCamera(
+    objpoints,
+    imgpoints,
+    img_size,
+    None,
+    None
+)
+
+print("\n===== 标定结果 =====")
+print("RMS reprojection error = {}".format(ret))
+print("K =\n{}".format(K))
+print("D =\n{}".format(D.ravel()))
+
+total_error = 0.0
+for i in range(len(objpoints)):
+    projected, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], K, D)
+    error = cv2.norm(imgpoints[i], projected, cv2.NORM_L2) / len(projected)
+    total_error += error
+
+mean_error = total_error / len(objpoints)
+print("Mean reprojection error = {}".format(mean_error))
+
+test_img = cv2.imread(image_paths[0])
+h, w = test_img.shape[:2]
+new_K, roi = cv2.getOptimalNewCameraMatrix(K, D, (w, h), 1, (w, h))
+undistorted = cv2.undistort(test_img, K, D, None, new_K)
+cv2.imwrite("undistorted_test.png", undistorted)
+
+np.savez(
+    "calib_result_opencv.npz",
+    K=K,
+    D=D,
+    image_width=w,
+    image_height=h,
+    new_K=new_K
+)
+
+ros_yaml = {
+    "image_width": int(w),
+    "image_height": int(h),
+    "camera_name": "go2_front",
+    "camera_matrix": {
+        "rows": 3,
+        "cols": 3,
+        "data": K.reshape(-1).tolist()
+    },
+    "distortion_model": "plumb_bob",
+    "distortion_coefficients": {
+        "rows": 1,
+        "cols": int(D.size),
+        "data": D.reshape(-1).tolist()
+    },
+    "rectification_matrix": {
+        "rows": 3,
+        "cols": 3,
+        "data": np.eye(3).reshape(-1).tolist()
+    },
+    "projection_matrix": {
+        "rows": 3,
+        "cols": 4,
+        "data": [
+            float(K[0, 0]), 0.0, float(K[0, 2]), 0.0,
+            0.0, float(K[1, 1]), float(K[1, 2]), 0.0,
+            0.0, 0.0, 1.0, 0.0
+        ]
+    }
+}
+
+with open("camera_intrinsics.yaml", "w") as f:
+    yaml.dump(ros_yaml, f, sort_keys=False)
+
+print("已保存:")
+print("  corner_vis/")
+print("  undistorted_test.png")
+print("  calib_result_opencv.npz")
+print("  camera_intrinsics.yaml")
