@@ -119,7 +119,7 @@ class QRDetect
         }
         distCoeffs_ = (cv::Mat_<double>(4, 1) << params.k1, params.k2, k3, k4);
       } else {
-        distCoeffs_ = (cv::Mat_<double>(1, 5) << params.k1, params.k2, params.p1, params.p2, 0.0);
+        distCoeffs_ = (cv::Mat_<double>(1, 5) << params.k1, params.k2, params.p1, params.p2, params.k3);
       }
 
       // Initialize QR dictionary

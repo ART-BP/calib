@@ -294,7 +294,7 @@ if __name__ == "__main__":
         bag_file = sys.argv[1]
     else:
         # 默认使用当前目录下的某个 bag，可以按需修改
-        bag_file = os.path.join(root, "calib_data/scene/mid.bag")
+        bag_file = os.path.join(root, "calib_data/scene_fd/left_short_f.bag")
         print(f"未指定 bag 文件，默认使用: {bag_file}")
 
     if len(sys.argv) > 2:

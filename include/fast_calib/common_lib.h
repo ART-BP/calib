@@ -496,21 +496,36 @@ class Square
       float s23 = distance(sorted_centers->points[2], sorted_centers->points[3]);
       float s30 = distance(sorted_centers->points[3], sorted_centers->points[0]);
 
-      // Check for pattern 1: width, height, width, height
-      bool pattern1_ok = 
-        (fabs(s01 - _target_width) / _target_width < GEOMETRY_TOLERANCE) &&
-        (fabs(s12 - _target_height) / _target_height < GEOMETRY_TOLERANCE) &&
-        (fabs(s23 - _target_width) / _target_width < GEOMETRY_TOLERANCE) &&
-        (fabs(s30 - _target_height) / _target_height < GEOMETRY_TOLERANCE);
+      // Sparse LiDAR data can shift one fitted center enough for one side to
+      // exceed the tolerance. Validate each pair of opposite sides by its mean,
+      // while still requiring the two sides to be mutually consistent.
+      auto opposite_sides_valid = [](float side1, float side2, float target) {
+        const float mean = (side1 + side2) / 2.0f;
+        const bool mean_ok =
+            fabs(mean - target) / target < GEOMETRY_TOLERANCE;
+        const bool pair_consistent =
+            fabs(side1 - side2) / target < GEOMETRY_TOLERANCE * 1.5f;
+        return mean_ok && pair_consistent;
+      };
 
-      // Check for pattern 2: height, width, height, width
-      bool pattern2_ok = 
-        (fabs(s01 - _target_height) / _target_height < GEOMETRY_TOLERANCE) &&
-        (fabs(s12 - _target_width) / _target_width < GEOMETRY_TOLERANCE) &&
-        (fabs(s23 - _target_height) / _target_height < GEOMETRY_TOLERANCE) &&
-        (fabs(s30 - _target_width) / _target_width < GEOMETRY_TOLERANCE);
+      // Check both possible width/height orderings after angular sorting.
+      bool pattern1_ok =
+          opposite_sides_valid(s01, s23, _target_width) &&
+          opposite_sides_valid(s12, s30, _target_height);
+      bool pattern2_ok =
+          opposite_sides_valid(s01, s23, _target_height) &&
+          opposite_sides_valid(s12, s30, _target_width);
 
       if (!pattern1_ok && !pattern2_ok) {
+        return false;
+      }
+
+      // Reject skewed quadrilaterals whose diagonals do not match the target.
+      float diagonal02 = distance(sorted_centers->points[0], sorted_centers->points[2]);
+      float diagonal13 = distance(sorted_centers->points[1], sorted_centers->points[3]);
+      float diagonal_mean = (diagonal02 + diagonal13) / 2.0f;
+      if (fabs(diagonal_mean - _target_diagonal) / _target_diagonal > GEOMETRY_TOLERANCE ||
+          fabs(diagonal02 - diagonal13) / _target_diagonal > GEOMETRY_TOLERANCE * 1.5f) {
         return false;
       }
       

@@ -1,16 +1,16 @@
 # Camera intrinsics  
   # 原始鱼眼（equidistant / fisheye）示例
-  camera_model: "fisheye"
-  fx: 1203.762044004368
-  fy: 1203.7009720218682
-  cx: 981.7904792654031
-  cy: 525.2625697472332
-  k1: -0.06940178268945467
-  k2: -0.05259276838826166
-  p1: 0
-  p2: 0
-  k3: 0.060392401913685174
-  k4: -0.03652503468416535
+  # camera_model: "fisheye"
+  # fx: 1203.762044004368
+  # fy: 1203.7009720218682
+  # cx: 981.7904792654031
+  # cy: 525.2625697472332
+  # k1: -0.06940178268945467
+  # k2: -0.05259276838826166
+  # p1: 0
+  # p2: 0
+  # k3: 0.060392401913685174
+  # k4: -0.03652503468416535
 
   # camera_model: "rational_polynomial"
   # fx: 1335.864460386936
@@ -28,22 +28,22 @@
 
  
 # Calibration target parameters
-  marker_size: 0.16 # ArUco marker size (our test data uses 0.16m; adjust to match your marker size)
-  delta_width_qr_center: 0.55 # Half the distance between the centers of two markers in the horizontal direction 
-  delta_height_qr_center: 0.35 # Half the distance between the centers of two markers in the vertical direction
-  delta_width_circles: 0.5 # Distance between the centers of two circles in the horizontal direction
-  delta_height_circles: 0.4 # Distance between the centers of two circles in the vertical direction
-  circle_radius: 0.12 # Radius of the circle 
-
-# multi_scene_11
-  x_min: -1.4
-  x_max: 0.8
-  y_min: -3.2
-  y_max: -2.0
-  z_min: -0.7
-  z_max: 0.8
-  bag_path: "$(find fast_calib)/calib_data/scene/mid_short.bag"
-  image_path: "$(find fast_calib)/calib_data/scene/mid.png"
+marker_size: 0.16 # ArUco marker size (our test data uses 0.16m; adjust to match your marker size)
+delta_width_qr_center: 0.55 # Half the distance between the centers of two markers in the horizontal direction
+delta_height_qr_center: 0.35 # Half the distance between the centers of two markers in the vertical direction
+delta_width_circles: 0.5 # Distance between the centers of two circles in the horizontal direction
+delta_height_circles: 0.4 # Distance between the centers of two circles in the vertical direction
+circle_radius: 0.12 # Radius of the circle
+#  go2w 内参标定
+# # multi_scene_11
+#   x_min: -1.4
+#   x_max: 0.8
+#   y_min: -3.2
+#   y_max: -2.0
+#   z_min: -0.7
+#   z_max: 0.8
+#   bag_path: "$(find fast_calib)/calib_data/scene/mid_short.bag"
+#   image_path: "$(find fast_calib)/calib_data/scene/mid.png"
 
 # multi_scene_22
   # x_min: -3.0
@@ -64,7 +64,142 @@
   # bag_path: "$(find fast_calib)/calib_data/scene/right_short.bag"
   # image_path: "$(find fast_calib)/calib_data/scene/right.png"
   
-  
-  lidar_topic: "/lidar_points"
+# # multi_scene_11
+#   x_min: 1.7
+#   x_max: 3.4
+#   y_min: -1.7
+#   y_max: 1.3
+#   z_min: -0.6
+#   z_max: 0.9
+#   bag_path: "$(find fast_calib)/calib_data/scene/mid_short_base_link.bag"
+#   image_path: "$(find fast_calib)/calib_data/scene/mid.png"
+
+# # multi_scene_22
+#   x_min: 2.0
+#   x_max: 3.5
+#   y_min: -1.9
+#   y_max: 0.8
+#   z_min: -0.6
+#   z_max: 0.9
+#   bag_path: "$(find fast_calib)/calib_data/scene/left_short_base_link.bag"
+#   image_path: "$(find fast_calib)/calib_data/scene/left.png"
+
+# # multi_scene_33
+#   x_min: 2.1
+#   x_max: 3.4
+#   y_min: -0.86
+#   y_max: 1.9
+#   z_min: -0.6
+#   z_max: 0.9
+#   bag_path: "$(find fast_calib)/calib_data/scene/right_short_base_link.bag"
+#   image_path: "$(find fast_calib)/calib_data/scene/right.png"
+#   lidar_topic: "/lidar_points"
+# # Output
+#   output_path: "$(find fast_calib)/output"
+
+
+# 导盲犬标定
+
+# camera_model: "pinhole"
+# fx: 598.0689565033549
+# fy: 597.6070441110179
+# cx: 329.6593672355304
+# cy: 251.03062290746962
+# k1: 0.10084586419551093
+# k2: -0.1017755753474589
+# p1: 0.0014449907043059024
+# p2: -0.0009732172673344239
+# k3: -0.3645681115342965
+# k4: 0.0
+
+
+# # multi_scene_right_short
+# x_min: 1.2
+# x_max: 4.1
+# y_min: -1.9
+# y_max: 1.1
+# z_min: -0.8
+# z_max: 0.6
+# bag_path: "$(find fast_calib)/calib_data/scene_guidedog/right_short.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_guidedog/right.png"
+
+# # multi_scene_mid_short
+# x_min: 1.7
+# x_max: 3.6
+# y_min: -1.3
+# y_max: 1.3
+# z_min: -0.8
+# z_max: 0.6
+# bag_path: "$(find fast_calib)/calib_data/scene_guidedog/mid_short.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_guidedog/mid.png"
+
+# # multi_scene_left_short
+# x_min: 1.7
+# x_max: 3.5
+# y_min: -1.8
+# y_max: 0.8
+# z_min: -0.8
+# z_max: 0.6
+# bag_path: "$(find fast_calib)/calib_data/scene_guidedog/left_short.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_guidedog/left.png"
+
+# lidar_topic: "/rslidar_points"
+# # Output
+# output_path: "$(find fast_calib)/output/guidedog"
+
+##  分队装甲车标定
+#原始鱼眼（equidistant / fisheye）
+camera_model: "fisheye"
+fx: 1130.1035455064891
+fy: 1130.1541762377883
+cx: 951.0193473268226
+cy: 581.0902322193278
+k1: -0.10949451690742605
+k2: 0.01563345714193377
+p1: 0
+p2: 0
+k3: -0.07072000499253979
+k4: 0.04326396138302371
+
+
+# # multi_scene_right_short
+# x_min: 2.1
+# x_max: 4.7
+# y_min: -3.9
+# y_max: -0.3
+# z_min: -1.5
+# z_max: 0.3
+# bag_path: "$(find fast_calib)/calib_data/scene_fd/right_short.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_fd/right.jpg"
+
+# # multi_scene_mid_short
+# x_min: 2.9
+# x_max: 4.2
+# y_min: -1.8
+# y_max: 1.8
+# z_min: -1.5
+# z_max: 0.3
+# bag_path: "$(find fast_calib)/calib_data/scene_fd/mid_short.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_fd/mid.jpg"
+
+# multi_scene_left_short
+x_min: 2.5
+x_max: 3.9
+y_min: -1.1
+y_max: 3.4
+z_min: -1.5
+z_max: 0.3
+bag_path: "$(find fast_calib)/calib_data/scene_fd/left_short.bag"
+image_path: "$(find fast_calib)/calib_data/scene_fd/left.jpg"
+# # multi_scene_left_short_f
+# x_min: 4.9
+# x_max: 7.3
+# y_min: -0.6
+# y_max: 3.4
+# z_min: -1.5
+# z_max: 0.3
+# bag_path: "$(find fast_calib)/calib_data/scene_fd/left_short_f.bag"
+# image_path: "$(find fast_calib)/calib_data/scene_fd/left_f.jpg"
+lidar_topic: "/lidar_points"
 # Output
-  output_path: "$(find fast_calib)/output"
+output_path: "$(find fast_calib)/output/fendui"

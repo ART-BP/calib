@@ -336,6 +336,9 @@ public:
             center_point.y = coefficients->values[1];
             center_point.z = 0;
             center_z0_cloud_->push_back(center_point);
+            ROS_INFO("[LiDAR] Circle candidate %zu: center=(%.4f, %.4f), radius=%.4f, inliers=%zu",
+                     center_z0_cloud_->size(), center_point.x, center_point.y,
+                     coefficients->values[2], inliers->indices.size());
 
             // 把当前圆的 inliers 从点云中移除，继续在剩余点中找
             extract2.setInputCloud(xy_cloud);
@@ -400,6 +403,23 @@ public:
             ROS_WARN(
                 "[LiDAR] Unable to find a candidate set that matches target's "
                 "geometry");
+            ROS_WARN("[LiDAR] Expected circle-center rectangle: %.4f x %.4f m.",
+                     delta_width_circles_, delta_height_circles_);
+            for (size_t i = 0; i < center_z0_cloud_->size(); ++i) {
+                const auto& center = center_z0_cloud_->at(i);
+                ROS_WARN("[LiDAR] Candidate %zu center=(%.4f, %.4f)",
+                         i + 1, center.x, center.y);
+            }
+            for (size_t i = 0; i < center_z0_cloud_->size(); ++i) {
+                for (size_t j = i + 1; j < center_z0_cloud_->size(); ++j) {
+                    const auto& a = center_z0_cloud_->at(i);
+                    const auto& b = center_z0_cloud_->at(j);
+                    const double dx = static_cast<double>(a.x) - b.x;
+                    const double dy = static_cast<double>(a.y) - b.y;
+                    ROS_WARN("[LiDAR] Candidate distance %zu-%zu: %.4f m",
+                             i + 1, j + 1, std::sqrt(dx * dx + dy * dy));
+                }
+            }
             return;
         }
         
